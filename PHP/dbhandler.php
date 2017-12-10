@@ -77,16 +77,33 @@ class db_handler
 		return $this->mysqli->query($q);
 	}
 	
-	// read a row by given id
-	public function read($id)
+	// read a row by given secret
+	public function read($secret)
 	{
-		return $this->mysqli->query("SELECT * FROM `" . $this->tablename . "` WHERE `id`='" . $id . "'")->fetch_array();
+		$prepared = $this->mysqli->prepare("SELECT * FROM `" . $this->tablename . "` WHERE `secret`=?");
+		$prepared->bind_param('s', $secret);
+		$prepared->execute();
+		$result = $prepared->get_result();
+		
+		if ($result->num_rows == 0)
+		{
+		    return_error(404, 'record not found');
+		}
+		return $result;
 	}
 	
-	// insert a row with id and name
-	public function insert_with_name($id, $name)
+	// insert a row with secret and story
+	public function insert($secret, $story)
 	{
-		$this->mysqli->query("INSERT INTO `" . $this->tablename . "` (`id`, `name`) VALUES ('" . $id . "',  '" . $name . "');");
+        $prepared = $this->mysqli->prepare("INSERT INTO `" . $this->tablename . "` (`secret`, `story`) VALUES (?, ?);");
+        $prepared->bind_param('ss', $secret, $story);
+		$prepared->execute();
+		$result = $prepared->get_result();
+		
+		if (!($result === TRUE))
+		{
+		    return_error(403, $this->mysqli->error);
+		}
 	}
 }
 
