@@ -16,7 +16,7 @@ if ($method == 'GET')
 {
     if (!isset($input['secret']))
     {
-        return_error(400, 'mandatory argument "secret" has no value in ' . $encoded_json);
+        return_error_with_params(400, "mandatory argument 'secret' has no value", $encoded_json, $_GET, $_POST);
     }
     
     $secret = $input['secret'];
@@ -35,12 +35,12 @@ if ($method == 'POST')
 {
     if (!isset($input['secret']))
     {
-        return_error(400, 'mandatory argument "secret" has no value in ' . $encoded_json);
+        return_error_with_params(400, "mandatory argument 'secret' has no value", $encoded_json, $_GET, $_POST);
     }
     
     if (!isset($input['story']))
     {
-        return_error(400, 'mandatory argument "story" has no value in ' . $encoded_json);
+        return_error_with_params(400, "mandatory argument 'story' has no value", $encoded_json, $_GET, $_POST);
     }
     
     $secret = $input['secret'];
