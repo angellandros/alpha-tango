@@ -1,5 +1,6 @@
 package com.apptec360.android.textsaver;
 
+import android.app.AlertDialog;
 import android.app.ProgressDialog;
 
 import com.android.volley.Cache;
@@ -10,7 +11,9 @@ import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.*;
 
+import android.content.DialogInterface;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -32,6 +35,8 @@ public class MainActivity extends AppCompatActivity {
     private EditText urlEditText = null;
     private EditText secretEditText = null;
     private EditText textEditText = null;
+
+    private long lastSave = 0L;
 
     RequestQueue mRequestQueue;
 
@@ -70,11 +75,17 @@ public class MainActivity extends AppCompatActivity {
         save.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mySave(
-                        urlEditText.getText().toString(),
-                        secretEditText.getText().toString(),
-                        textEditText.getText().toString()
-                );
+                long now = System.currentTimeMillis();
+
+                if (now - lastSave > 2000) {
+                    mySave(
+                            urlEditText.getText().toString(),
+                            secretEditText.getText().toString(),
+                            textEditText.getText().toString()
+                    );
+
+                    lastSave = now;
+                }
             }
         });
 
@@ -112,8 +123,13 @@ public class MainActivity extends AppCompatActivity {
         HashMap<String, String> params = new HashMap<String, String>();
         params.put("secret", secret);
 
+        String uri = Uri.parse(url)
+                .buildUpon()
+                .appendQueryParameter("secret", secret)
+                .build().toString();
+
         JsonObjectRequest jsObjRequest = new JsonObjectRequest
-                (Request.Method.GET, url, new JSONObject(params), new Response.Listener<JSONObject>() {
+                (Request.Method.GET, uri, new JSONObject(params), new Response.Listener<JSONObject>() {
 
                     @Override
                     public void onResponse(JSONObject response) {
@@ -135,6 +151,15 @@ public class MainActivity extends AppCompatActivity {
                             try {
                                 String body = new String(error.networkResponse.data,"UTF-8");
                                 Log.e(tag, "http request message: " + body);
+                                try {
+                                    JSONObject responseObj = new JSONObject(body);
+                                    showMessage(
+                                            "Error Code " + responseObj.getInt("code"),
+                                            responseObj.getString("message")
+                                    );
+                                } catch (JSONException e) {
+                                    e.printStackTrace();
+                                }
                             } catch (UnsupportedEncodingException e) {
                                 e.printStackTrace();
                             }
@@ -153,8 +178,14 @@ public class MainActivity extends AppCompatActivity {
         params.put("secret", secret);
         params.put("story", text);
 
+        String uri = Uri.parse(url)
+                .buildUpon()
+                .appendQueryParameter("secret", secret)
+                .appendQueryParameter("story", text)
+                .build().toString();
+
         JsonObjectRequest jsObjRequest = new JsonObjectRequest
-                (Request.Method.GET, url, new JSONObject(params), new Response.Listener<JSONObject>() {
+                (Request.Method.POST, uri, new JSONObject(params), new Response.Listener<JSONObject>() {
 
                     @Override
                     public void onResponse(JSONObject response) {
@@ -171,6 +202,15 @@ public class MainActivity extends AppCompatActivity {
                             try {
                                 String body = new String(error.networkResponse.data,"UTF-8");
                                 Log.e(tag, "http request message: " + body);
+                                try {
+                                    JSONObject responseObj = new JSONObject(body);
+                                    showMessage(
+                                            "Error Code " + responseObj.getInt("code"),
+                                            responseObj.getString("message")
+                                    );
+                                } catch (JSONException e) {
+                                    e.printStackTrace();
+                                }
                             } catch (UnsupportedEncodingException e) {
                                 e.printStackTrace();
                             }
@@ -201,5 +241,18 @@ public class MainActivity extends AppCompatActivity {
         String secret = secretField.getText().toString();
         SharedPreferences sp = getPreferences(MODE_PRIVATE);
         sp.edit().putString("url", urlString).putString("secret", secret).apply();
+    }
+
+    private void showMessage(String title, String message) {
+        new AlertDialog.Builder(MainActivity.this)
+                .setTitle(title)
+                .setMessage(message)
+                .setCancelable(false)
+                .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        dialog.cancel();
+                    }
+                }).show();
     }
 }

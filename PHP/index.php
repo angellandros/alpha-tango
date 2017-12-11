@@ -14,12 +14,12 @@ if (json_last_error() != JSON_ERROR_NONE)
 
 if ($method == 'GET')
 {
-    if (!isset($input['secret']))
+    if (!isset($input['secret']) && !isset($_GET['secret']))
     {
         return_error_with_params(400, "mandatory argument 'secret' has no value", $encoded_json, $_GET, $_POST);
     }
     
-    $secret = $input['secret'];
+    $secret = (isset($input['secret'])? $input['secret']: $_GET['secret']);
     $handler = db_handler::get_instance();
     
     $result = $handler->read($secret);
