@@ -2,107 +2,89 @@ package com.apptec360.android.textsaver;
 
 import android.app.ProgressDialog;
 
-import com.apptec360.android.textsaver.R;
+import com.android.volley.Cache;
+import com.android.volley.Network;
+import com.android.volley.Request;
+import com.android.volley.RequestQueue;
+import com.android.volley.Response;
+import com.android.volley.VolleyError;
+import com.android.volley.toolbox.*;
 
 import android.content.SharedPreferences;
-import android.os.AsyncTask;
-import android.os.Handler;
-import android.os.HandlerThread;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 
-import java.io.BufferedReader;
-import java.io.DataOutputStream;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.UnsupportedEncodingException;
+import java.util.HashMap;
 
 public class MainActivity extends AppCompatActivity {
 
-    HandlerThread handlerThread = null;
-    Handler handler = null;
-    Handler mainHandler = null;
-
     ProgressDialog pd = null;
     private static boolean firstStart = true;
+
+    private EditText urlEditText = null;
+    private EditText secretEditText = null;
+    private EditText textEditText = null;
+
+    RequestQueue mRequestQueue;
+
+    private final String tag = "MainActivity";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        handlerThread = new HandlerThread("handlerThread");
-        handlerThread.start();
-        handler = new Handler(handlerThread.getLooper());
-        mainHandler = new Handler();
+        // Store pointers to view objects
+        urlEditText = findViewById(R.id.url);
+        secretEditText = findViewById(R.id.secret);
+        textEditText = findViewById(R.id.textfield);
 
+        // Instantiate the cache: 1 MB
+        Cache cache = new DiskBasedCache(getCacheDir(), 1024 * 1024);
+
+        // Set up the network to use HttpURLConnection as the HTTP client.
+        Network network = new BasicNetwork(new HurlStack());
+
+        // Instantiate the RequestQueue with the cache and network.
+        mRequestQueue = new RequestQueue(cache, network);
+
+        // Start the queue
+        mRequestQueue.start();
+        Log.d(tag, "started the request queue");
+
+        // Progress Dialog
         pd = new ProgressDialog(this);
         pd.setTitle("Loading");
     }
 
     private void initListeners(){
-        Button save = (Button) findViewById(R.id.saveButton);
+        Button save = findViewById(R.id.saveButton);
         save.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                save();
+                mySave(
+                        urlEditText.getText().toString(),
+                        secretEditText.getText().toString(),
+                        textEditText.getText().toString()
+                );
             }
         });
 
-        Button reload = (Button) findViewById(R.id.reloadButton);
+        Button reload = findViewById(R.id.reloadButton);
         reload.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                load();
+                myLoad(urlEditText.getText().toString(), secretEditText.getText().toString());
             }
         });
-    }
-
-    private void load() {
-        if(firstStart){
-            firstStart = false;
-            return;
-        }
-        LoadTask lt = new LoadTask();
-        handler.post(lt);
-    }
-
-    private void save() {
-        SaveTask st = new SaveTask();
-        handler.post(st);
-    }
-
-    private class LoadTask implements Runnable {
-        @Override
-        public void run() {
-            _load();
-        }
-    }
-
-    private class SaveTask implements Runnable {
-        @Override
-        public void run() {
-            _save();
-        }
-    }
-
-    private class UpdateTextTask implements Runnable {
-
-        String text = null;
-
-        public UpdateTextTask(String text){
-            this.text = text;
-        }
-
-        @Override
-        public void run() {
-            EditText textField = (EditText) findViewById(R.id.textfield);
-            textField.setText(text);
-        }
     }
 
     @Override
@@ -110,14 +92,8 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
 
         initListeners();
-
-        load();
-
         restoreTextFields();
     }
-
-
-
 
     @Override
     protected void onPause() {
@@ -130,117 +106,100 @@ public class MainActivity extends AppCompatActivity {
         saveTextFields();
     }
 
-    private void restoreTextFields() {
-        EditText urlField = (EditText) findViewById(R.id.url);
-        EditText secretField = (EditText) findViewById(R.id.secret);
+    private void myLoad(String url, String secret) {
+        pd.show();
 
+        HashMap<String, String> params = new HashMap<String, String>();
+        params.put("secret", secret);
+
+        JsonObjectRequest jsObjRequest = new JsonObjectRequest
+                (Request.Method.GET, url, new JSONObject(params), new Response.Listener<JSONObject>() {
+
+                    @Override
+                    public void onResponse(JSONObject response) {
+                        try {
+                            textEditText.setText(response.getString("story"));
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                            Log.e(tag, "malformed response json object: " + e.toString());
+                        }
+                        pd.dismiss();
+                    }
+                }, new Response.ErrorListener() {
+
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        error.printStackTrace();
+                        Log.e(tag, "http request error: " + error.toString());
+                        if(error.networkResponse.data!=null) {
+                            try {
+                                String body = new String(error.networkResponse.data,"UTF-8");
+                                Log.e(tag, "http request message: " + body);
+                            } catch (UnsupportedEncodingException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                        pd.dismiss();
+                    }
+                });
+
+        mRequestQueue.add(jsObjRequest);
+    }
+
+    private void mySave(String url, String secret, String text) {
+        pd.show();
+
+        HashMap<String, String> params = new HashMap<String, String>();
+        params.put("secret", secret);
+        params.put("story", text);
+
+        JsonObjectRequest jsObjRequest = new JsonObjectRequest
+                (Request.Method.GET, url, new JSONObject(params), new Response.Listener<JSONObject>() {
+
+                    @Override
+                    public void onResponse(JSONObject response) {
+                        textEditText.setText("");
+                        pd.dismiss();
+                    }
+                }, new Response.ErrorListener() {
+
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        error.printStackTrace();
+                        Log.e(tag, "http request error: " + error.toString());
+                        if(error.networkResponse.data!=null) {
+                            try {
+                                String body = new String(error.networkResponse.data,"UTF-8");
+                                Log.e(tag, "http request message: " + body);
+                            } catch (UnsupportedEncodingException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                        pd.dismiss();
+                    }
+                });
+
+        mRequestQueue.add(jsObjRequest);
+    }
+
+    private void restoreTextFields() {
+        EditText urlField = findViewById(R.id.url);
+        EditText secretField = findViewById(R.id.secret);
 
         SharedPreferences sp = getPreferences(MODE_PRIVATE);
-        String urlString = sp.getString("url", null);
-        String secret = sp.getString("secret", null);
+        String urlString = sp.getString("url", "");
+        String secret = sp.getString("secret", "");
 
         urlField.setText(urlString);
         secretField.setText(secret);
     }
 
     private void saveTextFields() {
-        EditText urlField = (EditText) findViewById(R.id.url);
-        EditText secretField = (EditText) findViewById(R.id.secret);
+        EditText urlField = findViewById(R.id.url);
+        EditText secretField = findViewById(R.id.secret);
         String urlString = urlField.getText().toString();
         String secret = secretField.getText().toString();
         SharedPreferences sp = getPreferences(MODE_PRIVATE);
-        sp.edit().putString("url", urlString).putString("secret", secret).commit();
-    }
-
-    private void _load() {
-        pd.show();
-
-        EditText urlField = (EditText) findViewById(R.id.url);
-        EditText secretField = (EditText) findViewById(R.id.secret);
-
-        String urlString = urlField.getText().toString();
-        String secret = secretField.getText().toString();
-
-        urlString += "?action=load&secret=" + secret;
-
-        String answer = "null";
-
-        try {
-            URL url = new URL(urlString);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
-            connection.setDoOutput(true);
-
-            InputStream is = connection.getInputStream();
-            BufferedReader reader = new BufferedReader(new InputStreamReader(is));
-            StringBuilder sb = new StringBuilder();
-
-            while ((answer = reader.readLine()) != null) {
-                sb.append(answer);
-            }
-
-            is.close();
-            connection.disconnect();
-            answer = sb.toString();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        if (!answer.equals("error")) {
-            //success
-           UpdateTextTask utt = new UpdateTextTask(answer);
-           mainHandler.post(utt);
-        }
-
-        pd.dismiss();
-    }
-
-    private void _save() {
-        pd.show();
-
-        EditText urlField = (EditText) findViewById(R.id.url);
-        EditText secretField = (EditText) findViewById(R.id.secret);
-        EditText textField = (EditText) findViewById(R.id.textfield);
-        String urlString = urlField.getText().toString();
-        String secret = secretField.getText().toString();
-        String text = textField.getText().toString();
-
-        urlString += "?action=save&secret=" + secret;
-        String postParameters = "text=" + text;
-
-        String answer = null;
-
-        try {
-            URL url = new URL(urlString);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("POST");
-            connection.setDoInput(true);
-            connection.setDoOutput(true);
-
-            DataOutputStream wr = new DataOutputStream(connection.getOutputStream());
-            wr.writeBytes(postParameters);
-            wr.flush();
-            wr.close();
-            InputStream is = connection.getInputStream();
-            BufferedReader reader = new BufferedReader(new InputStreamReader(is));
-            StringBuilder sb = new StringBuilder();
-
-
-            while ((answer = reader.readLine()) != null) {
-                sb.append(answer);
-            }
-
-            is.close();
-            connection.disconnect();
-            answer = sb.toString();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        if (!answer.equals("error")) {
-            //success
-        }
-
-        pd.dismiss();
+        sp.edit().putString("url", urlString).putString("secret", secret).apply();
     }
 }
