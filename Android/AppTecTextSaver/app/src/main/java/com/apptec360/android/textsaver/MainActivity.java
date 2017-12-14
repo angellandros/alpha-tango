@@ -191,6 +191,7 @@ public class MainActivity extends AppCompatActivity {
                     public void onResponse(JSONObject response) {
                         textEditText.setText("");
                         pd.dismiss();
+                        showMessage("Save successful", "The text has been successfully saved.");
                     }
                 }, new Response.ErrorListener() {
 

@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">AppTec Text Saver</string>
+    <string name="input_uri_label">URL:</string>
+    <string name="input_uri_hint">http://...</string>
+    <string name="input_secret_label">Secret:</string>
+    <string name="input_secret_hint">Top Secret</string>
+    <string name="input_text_label">Text:</string>
+    <string name="input_text_hint">This is a text to save...</string>
+    <string name="button_save">Save</string>
+    <string name="button_load">Load</string>
 </resources>
