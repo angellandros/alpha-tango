@@ -97,8 +97,7 @@ class db_handler
 	{
         $prepared = $this->mysqli->prepare("INSERT INTO `" . $this->tablename . "` (`secret`, `story`) VALUES (?, ?);");
         $prepared->bind_param('ss', $secret, $story);
-		$prepared->execute();
-		$result = $prepared->get_result();
+		$result = $prepared->execute();
 		
 		if (!($result === TRUE))
 		{
