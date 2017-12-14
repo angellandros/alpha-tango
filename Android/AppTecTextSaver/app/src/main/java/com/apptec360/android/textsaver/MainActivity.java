@@ -3,6 +3,7 @@ package com.apptec360.android.textsaver;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 
+import com.android.volley.AuthFailureError;
 import com.android.volley.Cache;
 import com.android.volley.Network;
 import com.android.volley.Request;
@@ -26,15 +27,12 @@ import org.json.JSONObject;
 
 import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
     ProgressDialog pd = null;
     private static boolean firstStart = true;
-
-    private EditText urlEditText = null;
-    private EditText secretEditText = null;
-    private EditText textEditText = null;
 
     private long lastSave = 0L;
 
@@ -47,11 +45,6 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // Store pointers to view objects
-        urlEditText = findViewById(R.id.url);
-        secretEditText = findViewById(R.id.secret);
-        textEditText = findViewById(R.id.textfield);
-
         // Instantiate the cache: 1 MB
         Cache cache = new DiskBasedCache(getCacheDir(), 1024 * 1024);
 
@@ -60,6 +53,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Instantiate the RequestQueue with the cache and network.
         mRequestQueue = new RequestQueue(cache, network);
+        Log.d(tag, "initialized the HTTP request queue");
 
         // Start the queue
         mRequestQueue.start();
@@ -70,11 +64,16 @@ public class MainActivity extends AppCompatActivity {
         pd.setTitle("Loading");
     }
 
-    private void initListeners(){
+    private void initListeners() {
+        Log.d(tag, "initializing the listeners");
         Button save = findViewById(R.id.saveButton);
         save.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                EditText urlEditText = findViewById(R.id.url);
+                EditText secretEditText = findViewById(R.id.secret);
+                EditText textEditText = findViewById(R.id.textfield);
+
                 long now = System.currentTimeMillis();
 
                 if (now - lastSave > 2000) {
@@ -93,21 +92,33 @@ public class MainActivity extends AppCompatActivity {
         reload.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                EditText urlEditText = findViewById(R.id.url);
+                EditText secretEditText = findViewById(R.id.secret);
+
                 myLoad(urlEditText.getText().toString(), secretEditText.getText().toString());
             }
         });
+        Log.d(tag, "initialized the listeners");
     }
 
     @Override
     protected void onResume() {
+        Log.d(tag, "onResume called");
         super.onResume();
-
         initListeners();
-        restoreTextFields();
+
+        if(!firstStart) {
+            restoreTextFields();
+            Log.d(tag, "restored the text fields");
+        } else {
+            firstStart = false;
+            Log.d(tag, "first time, no text field restoration");
+        }
     }
 
     @Override
     protected void onPause() {
+        Log.d(tag, "onPause called");
         super.onPause();
 
         if (pd.isShowing()) {
@@ -115,12 +126,14 @@ public class MainActivity extends AppCompatActivity {
         }
 
         saveTextFields();
+        Log.d(tag, "text fields saved");
     }
 
     private void myLoad(String url, String secret) {
+        Log.d(tag, "myLoad called, with URL = " + url + ", secret = " + secret);
         pd.show();
 
-        HashMap<String, String> params = new HashMap<String, String>();
+        HashMap<String, String> params = new HashMap<>();
         params.put("secret", secret);
 
         String uri = Uri.parse(url)
@@ -134,6 +147,7 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void onResponse(JSONObject response) {
                         try {
+                            EditText textEditText = findViewById(R.id.textfield);
                             textEditText.setText(response.getString("story"));
                         } catch (JSONException e) {
                             e.printStackTrace();
@@ -145,25 +159,35 @@ public class MainActivity extends AppCompatActivity {
 
                     @Override
                     public void onErrorResponse(VolleyError error) {
-                        error.printStackTrace();
-                        Log.e(tag, "http request error: " + error.toString());
-                        if(error.networkResponse.data!=null) {
-                            try {
-                                String body = new String(error.networkResponse.data,"UTF-8");
-                                Log.e(tag, "http request message: " + body);
+                        try {
+                            error.printStackTrace();
+                            Log.e(tag, "http request error: " + error.toString());
+                            if(error.networkResponse.data!=null) {
                                 try {
-                                    JSONObject responseObj = new JSONObject(body);
-                                    showMessage(
-                                            "Error Code " + responseObj.getInt("code"),
-                                            responseObj.getString("message")
-                                    );
-                                } catch (JSONException e) {
+                                    String body = new String(error.networkResponse.data,"UTF-8");
+                                    Log.e(tag, "http request message: " + body);
+                                    try {
+                                        JSONObject responseObj = new JSONObject(body);
+                                        showMessage(
+                                                "Error Code " + responseObj.getInt("code"),
+                                                responseObj.getString("message")
+                                        );
+                                    } catch (JSONException e) {
+                                        Log.d(tag, "error status code: " + error.networkResponse.statusCode);
+                                        if (error.networkResponse.statusCode == 404) {
+                                            showMessage("Not Found", "Please check your URL.");
+                                        }
+                                    }
+                                } catch (UnsupportedEncodingException e) {
                                     e.printStackTrace();
                                 }
-                            } catch (UnsupportedEncodingException e) {
-                                e.printStackTrace();
                             }
+                        } catch (NullPointerException e) {
+                            e.printStackTrace();
+                            showMessage("Unexpected Response",
+                                    "Please check your URL and network connection.");
                         }
+
                         pd.dismiss();
                     }
                 });
@@ -172,23 +196,27 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void mySave(String url, String secret, String text) {
+        Log.d(tag, "mySave called, with URL = " + url + ", secret = " + secret + ", text = " + text);
         pd.show();
 
-        HashMap<String, String> params = new HashMap<String, String>();
+        HashMap<String, String> params = new HashMap<>();
         params.put("secret", secret);
         params.put("story", text);
 
         String uri = Uri.parse(url)
                 .buildUpon()
-                .appendQueryParameter("secret", secret)
-                .appendQueryParameter("story", text)
+//                .appendQueryParameter("secret", secret)
+//                .appendQueryParameter("story", text)
                 .build().toString();
+        Log.d(tag, "Uri: " + uri);
 
         JsonObjectRequest jsObjRequest = new JsonObjectRequest
                 (Request.Method.POST, uri, new JSONObject(params), new Response.Listener<JSONObject>() {
 
                     @Override
                     public void onResponse(JSONObject response) {
+                        Log.d(tag, "response: " + response.toString());
+                        EditText textEditText = findViewById(R.id.textfield);
                         textEditText.setText("");
                         pd.dismiss();
                         showMessage("Save successful", "The text has been successfully saved.");
@@ -197,25 +225,35 @@ public class MainActivity extends AppCompatActivity {
 
                     @Override
                     public void onErrorResponse(VolleyError error) {
-                        error.printStackTrace();
-                        Log.e(tag, "http request error: " + error.toString());
-                        if(error.networkResponse.data!=null) {
-                            try {
-                                String body = new String(error.networkResponse.data,"UTF-8");
-                                Log.e(tag, "http request message: " + body);
+                        try {
+                            error.printStackTrace();
+                            Log.e(tag, "http request error: " + error.toString());
+                            if(error.networkResponse.data != null) {
                                 try {
-                                    JSONObject responseObj = new JSONObject(body);
-                                    showMessage(
-                                            "Error Code " + responseObj.getInt("code"),
-                                            responseObj.getString("message")
-                                    );
-                                } catch (JSONException e) {
+                                    String body = new String(error.networkResponse.data,"UTF-8");
+                                    Log.e(tag, "http request message: " + body);
+                                    try {
+                                        JSONObject responseObj = new JSONObject(body);
+                                        showMessage(
+                                                "Error Code " + responseObj.getInt("code"),
+                                                responseObj.getString("message")
+                                        );
+                                    } catch (JSONException e) {
+                                        Log.d(tag, "error status code: " + error.networkResponse.statusCode);
+                                        if (error.networkResponse.statusCode == 404) {
+                                            showMessage("Not Found", "Please check your URL.");
+                                        }
+                                    }
+                                } catch (UnsupportedEncodingException e) {
                                     e.printStackTrace();
                                 }
-                            } catch (UnsupportedEncodingException e) {
-                                e.printStackTrace();
                             }
+                        } catch (NullPointerException e) {
+                            e.printStackTrace();
+                            showMessage("Unexpected Response",
+                                    "Please check your URL and network connection.");
                         }
+
                         pd.dismiss();
                     }
                 });

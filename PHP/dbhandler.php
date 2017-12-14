@@ -95,6 +95,16 @@ class db_handler
 	// insert a row with secret and story
 	public function insert($secret, $story)
 	{
+	    $prepared_l = $this->mysqli->prepare("SELECT * FROM `" . $this->tablename . "` WHERE `secret`=?");
+		$prepared_l->bind_param('s', $secret);
+		$prepared_l->execute();
+		$result_l = $prepared_l->get_result();
+		
+		if ($result_l->num_rows != 0)
+		{
+		    return_error(403, 'duplicate key ' . $secret);
+		}
+	
         $prepared = $this->mysqli->prepare("INSERT INTO `" . $this->tablename . "` (`secret`, `story`) VALUES (?, ?);");
         $prepared->bind_param('ss', $secret, $story);
 		$result = $prepared->execute();
