@@ -1,16 +1,11 @@
 package com.apptec360.android.textsaver;
 
 import android.app.AlertDialog;
-import android.app.ProgressDialog;
-
-import com.android.volley.AuthFailureError;
-import com.android.volley.Cache;
-import com.android.volley.Network;
 import com.android.volley.Request;
-import com.android.volley.RequestQueue;
-import com.android.volley.Response;
 import com.android.volley.VolleyError;
-import com.android.volley.toolbox.*;
+
+import io.gloxey.gnm.interfaces.VolleyResponse;
+import io.gloxey.gnm.managers.ConnectionManager;
 
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
@@ -26,17 +21,11 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.UnsupportedEncodingException;
-import java.util.HashMap;
-import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
-    ProgressDialog pd = null;
     private static boolean firstStart = true;
-
     private long lastSave = 0L;
-
-    RequestQueue mRequestQueue;
 
     private final String tag = "MainActivity";
 
@@ -44,24 +33,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
-        // Instantiate the cache: 1 MB
-        Cache cache = new DiskBasedCache(getCacheDir(), 1024 * 1024);
-
-        // Set up the network to use HttpURLConnection as the HTTP client.
-        Network network = new BasicNetwork(new HurlStack());
-
-        // Instantiate the RequestQueue with the cache and network.
-        mRequestQueue = new RequestQueue(cache, network);
-        Log.d(tag, "initialized the HTTP request queue");
-
-        // Start the queue
-        mRequestQueue.start();
-        Log.d(tag, "started the request queue");
-
-        // Progress Dialog
-        pd = new ProgressDialog(this);
-        pd.setTitle("Loading");
     }
 
     private void initListeners() {
@@ -121,107 +92,98 @@ public class MainActivity extends AppCompatActivity {
         Log.d(tag, "onPause called");
         super.onPause();
 
-        if (pd.isShowing()) {
-            pd.dismiss();
-        }
-
         saveTextFields();
         Log.d(tag, "text fields saved");
     }
 
     private void myLoad(String url, String secret) {
         Log.d(tag, "myLoad called, with URL = " + url + ", secret = " + secret);
-        pd.show();
-
-        HashMap<String, String> params = new HashMap<>();
-        params.put("secret", secret);
 
         String uri = Uri.parse(url)
                 .buildUpon()
                 .appendQueryParameter("secret", secret)
                 .build().toString();
 
-        JsonObjectRequest jsObjRequest = new JsonObjectRequest
-                (Request.Method.GET, uri, new JSONObject(params), new Response.Listener<JSONObject>() {
+        ConnectionManager.volleyStringRequest(this,
+                true, null, uri, new VolleyResponse() {
+            @Override
+            public void onResponse(String _response) {
+                try {
+                    JSONObject response = new JSONObject(_response);
+                    EditText textEditText = findViewById(R.id.textfield);
+                    textEditText.setText(response.getString("story"));
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                    Log.e(tag, "malformed response json object: " + e.toString());
+                }
+            }
 
-                    @Override
-                    public void onResponse(JSONObject response) {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                try {
+                    error.printStackTrace();
+                    Log.e(tag, "http request error: " + error.toString());
+                    if(error.networkResponse.data!=null) {
                         try {
-                            EditText textEditText = findViewById(R.id.textfield);
-                            textEditText.setText(response.getString("story"));
-                        } catch (JSONException e) {
-                            e.printStackTrace();
-                            Log.e(tag, "malformed response json object: " + e.toString());
-                        }
-                        pd.dismiss();
-                    }
-                }, new Response.ErrorListener() {
-
-                    @Override
-                    public void onErrorResponse(VolleyError error) {
-                        try {
-                            error.printStackTrace();
-                            Log.e(tag, "http request error: " + error.toString());
-                            if(error.networkResponse.data!=null) {
-                                try {
-                                    String body = new String(error.networkResponse.data,"UTF-8");
-                                    Log.e(tag, "http request message: " + body);
-                                    try {
-                                        JSONObject responseObj = new JSONObject(body);
-                                        showMessage(
-                                                "Error Code " + responseObj.getInt("code"),
-                                                responseObj.getString("message")
-                                        );
-                                    } catch (JSONException e) {
-                                        Log.d(tag, "error status code: " + error.networkResponse.statusCode);
-                                        if (error.networkResponse.statusCode == 404) {
-                                            showMessage("Not Found", "Please check your URL.");
-                                        }
-                                    }
-                                } catch (UnsupportedEncodingException e) {
-                                    e.printStackTrace();
+                            String body = new String(error.networkResponse.data,"UTF-8");
+                            Log.e(tag, "http request message: " + body);
+                            try {
+                                JSONObject responseObj = new JSONObject(body);
+                                showMessage(
+                                        "Error Code " + responseObj.getInt("code"),
+                                        responseObj.getString("message")
+                                );
+                            } catch (JSONException e) {
+                                Log.d(tag, "error status code: " + error.networkResponse.statusCode);
+                                if (error.networkResponse.statusCode == 404) {
+                                    showMessage("Not Found", "Please check your URL.");
                                 }
                             }
-                        } catch (NullPointerException e) {
+                        } catch (UnsupportedEncodingException e) {
                             e.printStackTrace();
-                            showMessage("Unexpected Response",
-                                    "Please check your URL and network connection.");
                         }
-
-                        pd.dismiss();
                     }
-                });
+                } catch (NullPointerException e) {
+                    e.printStackTrace();
+                    if (error.toString().toLowerCase().contains("bad url")) {
+                        showMessage("Bad URL", "Please check your URL");
+                    } else {
+                        showMessage("Unexpected Response",
+                                "Please check your URL and network connection.");
+                    }
+                }
+            }
 
-        mRequestQueue.add(jsObjRequest);
+            @Override
+            public void isNetwork(boolean connected) {
+                if (!connected) {
+                    showMessage("No Connection",
+                            "Please check your network connection.");
+                }
+            }
+        });
     }
 
-    private void mySave(String url, String secret, String text) {
+    private void mySave(String url, final String secret, final String text) {
         Log.d(tag, "mySave called, with URL = " + url + ", secret = " + secret + ", text = " + text);
-        pd.show();
-
-        HashMap<String, String> params = new HashMap<>();
-        params.put("secret", secret);
-        params.put("story", text);
 
         String uri = Uri.parse(url)
                 .buildUpon()
-//                .appendQueryParameter("secret", secret)
-//                .appendQueryParameter("story", text)
+                .appendQueryParameter("secret", secret)
+                .appendQueryParameter("story", text)
                 .build().toString();
         Log.d(tag, "Uri: " + uri);
 
-        JsonObjectRequest jsObjRequest = new JsonObjectRequest
-                (Request.Method.POST, uri, new JSONObject(params), new Response.Listener<JSONObject>() {
-
+        ConnectionManager.volleyStringRequest(this,
+                true, null, uri, Request.Method.GET, null,
+                new VolleyResponse() {
                     @Override
-                    public void onResponse(JSONObject response) {
-                        Log.d(tag, "response: " + response.toString());
+                    public void onResponse(String response) {
+                        Log.d(tag, "response: " + response);
                         EditText textEditText = findViewById(R.id.textfield);
                         textEditText.setText("");
-                        pd.dismiss();
                         showMessage("Save successful", "The text has been successfully saved.");
                     }
-                }, new Response.ErrorListener() {
 
                     @Override
                     public void onErrorResponse(VolleyError error) {
@@ -250,15 +212,71 @@ public class MainActivity extends AppCompatActivity {
                             }
                         } catch (NullPointerException e) {
                             e.printStackTrace();
-                            showMessage("Unexpected Response",
-                                    "Please check your URL and network connection.");
+                            if (error.toString().toLowerCase().contains("bad url")) {
+                                showMessage("Bad URL", "Please check your URL");
+                            } else {
+                                showMessage("Unexpected Response",
+                                        "Please check your URL and network connection.");
+                            }
                         }
+                    }
 
-                        pd.dismiss();
+                    @Override
+                    public void isNetwork(boolean connected) {
+                        if (!connected) {
+                            showMessage("No Connection",
+                                    "Please check your network connection.");
+                        }
                     }
                 });
-
-        mRequestQueue.add(jsObjRequest);
+//                (Request.Method.POST, uri, new JSONObject(params), new Response.Listener<JSONObject>() {
+//
+//                    @Override
+//                    public void onResponse(JSONObject response) {
+//                        Log.d(tag, "response: " + response.toString());
+//                        EditText textEditText = findViewById(R.id.textfield);
+//                        textEditText.setText("");
+//                        pd.dismiss();
+//                        showMessage("Save successful", "The text has been successfully saved.");
+//                    }
+//                }, new Response.ErrorListener() {
+//
+//                    @Override
+//                    public void onErrorResponse(VolleyError error) {
+//                        try {
+//                            error.printStackTrace();
+//                            Log.e(tag, "http request error: " + error.toString());
+//                            if(error.networkResponse.data != null) {
+//                                try {
+//                                    String body = new String(error.networkResponse.data,"UTF-8");
+//                                    Log.e(tag, "http request message: " + body);
+//                                    try {
+//                                        JSONObject responseObj = new JSONObject(body);
+//                                        showMessage(
+//                                                "Error Code " + responseObj.getInt("code"),
+//                                                responseObj.getString("message")
+//                                        );
+//                                    } catch (JSONException e) {
+//                                        Log.d(tag, "error status code: " + error.networkResponse.statusCode);
+//                                        if (error.networkResponse.statusCode == 404) {
+//                                            showMessage("Not Found", "Please check your URL.");
+//                                        }
+//                                    }
+//                                } catch (UnsupportedEncodingException e) {
+//                                    e.printStackTrace();
+//                                }
+//                            }
+//                        } catch (NullPointerException e) {
+//                            e.printStackTrace();
+//                            showMessage("Unexpected Response",
+//                                    "Please check your URL and network connection.");
+//                        }
+//
+//                        pd.dismiss();
+//                    }
+//                });
+//
+//        mRequestQueue.add(jsObjRequest);
     }
 
     private void restoreTextFields() {
