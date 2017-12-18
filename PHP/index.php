@@ -12,25 +12,6 @@ if (json_last_error() != JSON_ERROR_NONE)
     return_error(400, 'bad json input');
 }
 
-if ($method == 'GET')
-{
-    if (!isset($input['secret']) && !isset($_GET['secret']))
-    {
-        return_error_with_params(400, "mandatory argument 'secret' has no value", $encoded_json, $_GET, $_POST);
-    }
-    
-    $secret = (isset($input['secret'])? $input['secret']: $_GET['secret']);
-    $handler = db_handler::get_instance();
-    
-    $result = $handler->read($secret);
-    while($row = $result->fetch_assoc())
-    {
-        $body = array('code' => 200, 'secret' => $secret, 'story' => $row['story']);
-        echo json_encode($body);
-        exit();
-    }
-}
-
 if ($method == 'POST')
 {
     if (!isset($input['secret']))
@@ -52,6 +33,25 @@ if ($method == 'POST')
     $body = array('code' => 200, 'successful' => true);
     echo json_encode($body);
     exit();
+}
+
+else if ($method == 'GET')
+{
+    if (!isset($input['secret']) && !isset($_GET['secret']))
+    {
+        return_error_with_params(400, "mandatory argument 'secret' has no value", $encoded_json, $_GET, $_POST);
+    }
+    
+    $secret = (isset($input['secret'])? $input['secret']: $_GET['secret']);
+    $handler = db_handler::get_instance();
+    
+    $result = $handler->read($secret);
+    while($row = $result->fetch_assoc())
+    {
+        $body = array('code' => 200, 'secret' => $secret, 'story' => $row['story']);
+        echo json_encode($body);
+        exit();
+    }
 }
 
 ?>
